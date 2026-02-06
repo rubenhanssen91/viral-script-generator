@@ -187,18 +187,12 @@ def get_youtube_transcript(video_id):
     if not YOUTUBE_AVAILABLE:
         return None, "YouTube transcript API not available"
     try:
-        from youtube_transcript_api import YouTubeTranscriptApi as YTApi
-        # Use list_transcripts which works across versions
-        transcript_list = YTApi.list_transcripts(video_id)
+        # New API (v1.0+): instantiate and call fetch()
+        api = YouTubeTranscriptApi()
+        transcript = api.fetch(video_id)
         
-        # Try to get English transcript first, then any available
-        try:
-            transcript = transcript_list.find_transcript(['en', 'en-US', 'en-GB'])
-        except:
-            transcript = transcript_list.find_generated_transcript(['en', 'en-US', 'en-GB'])
-        
-        fetched = transcript.fetch()
-        full_text = " ".join([entry['text'] for entry in fetched])
+        # Extract text from FetchedTranscriptSnippet objects
+        full_text = " ".join([snippet.text for snippet in transcript])
         return full_text, None
     except Exception as e:
         return None, f"Could not get transcript: {e}"
