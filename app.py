@@ -11,21 +11,18 @@ from pathlib import Path
 
 def get_api_key():
     """Get API key from secrets, env, or session"""
-    # Try Streamlit secrets first (for cloud deployment)
     try:
         if hasattr(st, 'secrets') and 'ANTHROPIC_API_KEY' in st.secrets:
             return st.secrets['ANTHROPIC_API_KEY']
     except:
         pass
-    # Then environment variable
     if os.environ.get('ANTHROPIC_API_KEY'):
         return os.environ.get('ANTHROPIC_API_KEY')
-    # Then session state (user input)
     return st.session_state.get('api_key', '')
 
 # Page config
 st.set_page_config(
-    page_title="🎬 Viral Script Generator v5",
+    page_title="🎬 Viral Script Generator",
     page_icon="🎬",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -44,20 +41,12 @@ st.markdown("""
 .score-high { color: #00ff88; font-size: 24px; font-weight: bold; }
 .score-medium { color: #ffdd00; font-size: 24px; font-weight: bold; }
 .score-low { color: #ff4444; font-size: 24px; font-weight: bold; }
-.hook-card {
-    background: #1e1e2e;
-    padding: 15px;
-    border-radius: 8px;
-    margin: 10px 0;
-    border-left: 4px solid #6366f1;
-}
-.comparison-better { background-color: rgba(0, 255, 136, 0.1); }
-.comparison-worse { background-color: rgba(255, 68, 68, 0.1); }
+.stExpander { border: 1px solid #333; border-radius: 8px; }
 </style>
 """, unsafe_allow_html=True)
 
 # ============================================================
-# KNOWLEDGE BASE (Same as v4, abbreviated for space)
+# KNOWLEDGE BASE
 # ============================================================
 
 HOOK_FORMULAS = {
@@ -89,9 +78,12 @@ STORY_STRUCTURES = {
 }
 
 RUBEN_STYLE = """
-✅ DO: Personal stories, rhetorical questions, strong opinions, specific examples, curiosity builders
-❌ DON'T: "Let's dive in", "Furthermore", "In conclusion", generic statements
+✅ DO: Personal stories, rhetorical questions, strong opinions, specific examples, curiosity builders, flowing conversational sentences
+❌ DON'T: "Let's dive in", "Furthermore", "In conclusion", generic statements, staccato AI writing, em dashes
 """
+
+EXAMPLE_PROJECTS = ["Poundbury", "Cayalá", "Le Plessis-Robinson", "Brandevoort", "Heulebrug", "Seaside", "Celebration", "Jakriborg"]
+EXAMPLE_EXPERTS = ["Léon Krier", "Nikos Salingaros", "Christopher Alexander", "Andrés Duany", "James Howard Kunstler", "Chuck Marohn", "Ann Sussman"]
 
 # ============================================================
 # HELPER FUNCTIONS
@@ -104,15 +96,18 @@ def get_client():
 def generate(prompt, max_tokens=4000):
     client = get_client()
     if not client:
-        return None, "❌ No API key"
+        return None, "❌ No API key configured. Add it in Settings → Secrets."
     try:
-        msg = client.messages.create(model="claude-sonnet-4-20250514", max_tokens=max_tokens, messages=[{"role": "user", "content": prompt}])
+        msg = client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=max_tokens,
+            messages=[{"role": "user", "content": prompt}]
+        )
         return msg.content[0].text, None
     except Exception as e:
         return None, f"❌ {e}"
 
 def save_to_history(type, content, metadata={}):
-    """Save generation to session history"""
     if "history" not in st.session_state:
         st.session_state.history = []
     st.session_state.history.append({
@@ -121,25 +116,9 @@ def save_to_history(type, content, metadata={}):
         "metadata": metadata,
         "timestamp": datetime.now().isoformat()
     })
-    return None
 
-def load_transcript_samples():
-    """Load transcript samples (if available locally)"""
-    # These paths only work locally, gracefully return empty on cloud
-    possible_paths = [
-        Path("/Users/rubenhanssen_macmini/Documents/Aesthetic City Brain/Video Transcripts"),
-        Path.home() / "Documents/Aesthetic City Brain/Video Transcripts",
-    ]
-    samples = []
-    for path in possible_paths:
-        if path.exists():
-            for f in list(path.glob("*.txt"))[:5]:
-                try:
-                    samples.append({"name": f.stem, "content": f.read_text()[:3000]})
-                except:
-                    pass
-            break
-    return samples
+def has_api_key():
+    return bool(get_api_key())
 
 # ============================================================
 # SIDEBAR
@@ -147,8 +126,8 @@ def load_transcript_samples():
 
 with st.sidebar:
     st.title("🎬 Viral Script Generator")
+    st.caption("For The Aesthetic City")
     
-    # Check if API key is in secrets (cloud) or needs user input
     has_secret_key = False
     try:
         has_secret_key = hasattr(st, 'secrets') and 'ANTHROPIC_API_KEY' in st.secrets
@@ -165,6 +144,8 @@ with st.sidebar:
         if api_key:
             st.session_state.api_key = api_key
             st.success("✅ Ready")
+        else:
+            st.warning("⚠️ Enter API key to generate")
     
     st.divider()
     
@@ -187,7 +168,7 @@ with st.sidebar:
 # MAIN
 # ============================================================
 
-st.title("🎬 Viral Script Generator v5")
+st.title("🎬 Viral Script Generator")
 
 # ------------------------------------------------------------
 # HOOK GENERATOR
@@ -195,7 +176,6 @@ st.title("🎬 Viral Script Generator v5")
 if mode == "🎣 Hook Generator":
     st.header("🎣 Hook Generator")
     
-    # Visual formula selector
     st.subheader("Select Formulas")
     cols = st.columns(6)
     selected = []
@@ -212,7 +192,13 @@ if mode == "🎣 Hook Generator":
     col1, col2 = st.columns([3, 1])
     with col1:
         if st.button("🚀 Generate Hooks", type="primary", use_container_width=True):
-            if topic and selected and st.session_state.api_key:
+            if not has_api_key():
+                st.error("❌ No API key configured")
+            elif not topic:
+                st.error("❌ Enter a topic")
+            elif not selected:
+                st.error("❌ Select at least one formula")
+            else:
                 formulas = "\n".join([f"- {n}: {HOOK_FORMULAS[n]['template']}" for n in selected])
                 prompt = f"""Generate YouTube hooks for "The Aesthetic City" channel.
 
@@ -236,7 +222,7 @@ Be specific to architecture/urbanism. Sound like Ruben."""
                         st.markdown("### Generated Hooks")
                         st.markdown(result)
                         save_to_history("hooks", result, {"topic": topic})
-                        st.success("💾 Saved")
+                        st.success("💾 Saved to history")
                     elif err:
                         st.error(err)
     with col2:
@@ -248,46 +234,205 @@ Be specific to architecture/urbanism. Sound like Ruben."""
 elif mode == "📝 Full Script":
     st.header("📝 Full Script Generator")
     
-    idea = st.text_area("Video Idea", height=100)
+    # Core inputs
+    idea = st.text_area("💡 Video Idea *", height=100, placeholder="What's the main concept of this video?")
     
     col1, col2, col3 = st.columns(3)
     with col1:
-        structure = st.selectbox("Structure", list(STORY_STRUCTURES.keys()))
+        structure = st.selectbox("📐 Structure", list(STORY_STRUCTURES.keys()))
     with col2:
-        length = st.selectbox("Length", ["5 min", "8 min", "12 min", "15 min"])
+        length = st.selectbox("⏱️ Length", ["5 min", "8 min", "12 min", "15 min", "20 min"])
     with col3:
-        style = st.selectbox("Style", ["Discovery/Personal", "Educational", "Opinion/Rant"])
+        style = st.selectbox("🎭 Style", ["Discovery/Personal", "Educational", "Opinion/Rant", "Case Study"])
     
-    if st.button("🚀 Generate Script", type="primary"):
-        if idea and st.session_state.api_key:
+    st.divider()
+    st.subheader("🎛️ Optional Inputs")
+    st.caption("Toggle the sections you want to use")
+    
+    # Optional inputs with toggles
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # Must-includes
+        use_must_include = st.checkbox("✅ Must-Include Points", value=False)
+        must_include = ""
+        if use_must_include:
+            must_include = st.text_area("Key points that MUST appear:", height=80, 
+                placeholder="- The cost savings of traditional design\n- Reference to the 2019 study\n- Mention human-scale streets")
+        
+        # Specific examples
+        use_examples = st.checkbox("🏘️ Specific Examples/Projects", value=False)
+        examples = ""
+        if use_examples:
+            examples = st.text_area("Projects to feature:", height=80,
+                placeholder="Poundbury, Cayalá, Le Plessis-Robinson...")
+            st.caption(f"Suggestions: {', '.join(EXAMPLE_PROJECTS[:5])}")
+        
+        # Experts to quote
+        use_experts = st.checkbox("🎓 Experts to Quote", value=False)
+        experts = ""
+        if use_experts:
+            experts = st.text_area("Names to reference:", height=60,
+                placeholder="Léon Krier, Nikos Salingaros...")
+            st.caption(f"Suggestions: {', '.join(EXAMPLE_EXPERTS[:4])}")
+        
+        # Avoid
+        use_avoid = st.checkbox("🚫 Avoid / Don't Include", value=False)
+        avoid = ""
+        if use_avoid:
+            avoid = st.text_area("Topics or angles to skip:", height=60,
+                placeholder="Don't mention politics, avoid the US examples...")
+        
+        # Personal angle
+        use_personal = st.checkbox("👤 Personal Angle", value=False)
+        personal = ""
+        if use_personal:
+            personal = st.text_area("Personal story or connection:", height=60,
+                placeholder="I visited this place last year and...")
+    
+    with col2:
+        # Target emotion
+        use_emotion = st.checkbox("💫 Target Emotion", value=False)
+        emotion = ""
+        if use_emotion:
+            emotion = st.selectbox("What should viewers feel?", 
+                ["", "Wonder & Awe", "Outrage & Frustration", "Hope & Inspiration", "Curiosity & Intrigue", "Nostalgia", "Motivation to Act"])
+        
+        # Controversy level
+        use_controversy = st.checkbox("🔥 Controversy Level", value=False)
+        controversy = ""
+        if use_controversy:
+            controversy = st.select_slider("How provocative?", 
+                options=["Safe", "Mildly Edgy", "Provocative", "Very Controversial"])
+        
+        # Audience level
+        use_audience = st.checkbox("👥 Audience Level", value=False)
+        audience = ""
+        if use_audience:
+            audience = st.selectbox("Who is this for?",
+                ["", "Complete Newcomers", "Casual Enthusiasts", "Knowledgeable Fans", "Professionals"])
+        
+        # Hook style
+        use_hook = st.checkbox("🎣 Opening Hook Style", value=False)
+        hook_style = ""
+        if use_hook:
+            hook_options = ["Surprise me"] + list(HOOK_FORMULAS.keys())
+            hook_style = st.selectbox("Pick a hook formula:", hook_options)
+        
+        # CTA
+        use_cta = st.checkbox("📢 Call-to-Action", value=False)
+        cta = ""
+        if use_cta:
+            cta = st.selectbox("What should viewers do?",
+                ["", "Subscribe for more", "Check out the course", "Visit the website", "Share this video", "Just think differently", "Join the movement"])
+        
+        # Key statistic
+        use_stat = st.checkbox("📊 Key Statistic", value=False)
+        stat = ""
+        if use_stat:
+            stat = st.text_input("Compelling number to build around:",
+                placeholder="85% of people prefer traditional architecture")
+        
+        # B-roll
+        use_broll = st.checkbox("🎬 B-Roll Available", value=False)
+        broll = ""
+        if use_broll:
+            broll = st.text_area("What footage do you have?", height=60,
+                placeholder="Drone shots of Poundbury, street-level Amsterdam...")
+        
+        # Sponsor
+        use_sponsor = st.checkbox("💰 Sponsor Integration", value=False)
+        sponsor = ""
+        if use_sponsor:
+            sponsor = st.text_input("Sponsor product/message:",
+                placeholder="Skillshare - learning platform")
+    
+    st.divider()
+    
+    # Generate button
+    if st.button("🚀 Generate Full Script", type="primary", use_container_width=True):
+        if not has_api_key():
+            st.error("❌ No API key configured")
+        elif not idea:
+            st.error("❌ Enter a video idea")
+        else:
+            # Build prompt with all inputs
             beats = ", ".join(STORY_STRUCTURES[structure])
             words = int(length.split()[0]) * 150
             
-            prompt = f"""Write a YouTube script as Ruben Hanssen (The Aesthetic City, 209k subs).
+            prompt = f"""Write a YouTube script as Ruben Hanssen (The Aesthetic City, 209k subscribers).
 
-IDEA: {idea}
-STRUCTURE: {structure} ({beats})
-LENGTH: {words} words
-STYLE: {style}
+CORE REQUIREMENTS:
+- Idea: {idea}
+- Structure: {structure} ({beats})
+- Target length: {words} words ({length})
+- Style: {style}
 
 {RUBEN_STYLE}
+"""
+            
+            # Add optional inputs
+            if must_include:
+                prompt += f"\nMUST INCLUDE these points:\n{must_include}\n"
+            if examples:
+                prompt += f"\nFEATURE these specific projects/places:\n{examples}\n"
+            if experts:
+                prompt += f"\nQUOTE or reference these experts:\n{experts}\n"
+            if avoid:
+                prompt += f"\nAVOID these topics/angles:\n{avoid}\n"
+            if personal:
+                prompt += f"\nWEAVE IN this personal angle:\n{personal}\n"
+            if emotion:
+                prompt += f"\nTARGET EMOTION: Make viewers feel {emotion}\n"
+            if controversy:
+                prompt += f"\nCONTROVERSY LEVEL: {controversy}\n"
+            if audience:
+                prompt += f"\nAUDIENCE: Written for {audience}\n"
+            if hook_style and hook_style != "Surprise me":
+                prompt += f"\nOPENING HOOK: Use the '{hook_style}' formula\n"
+            if cta:
+                prompt += f"\nCALL-TO-ACTION: End with '{cta}'\n"
+            if stat:
+                prompt += f"\nKEY STATISTIC to build around: {stat}\n"
+            if broll:
+                prompt += f"\nAVAILABLE B-ROLL (reference in script): {broll}\n"
+            if sponsor:
+                prompt += f"\nSPONSOR INTEGRATION: Naturally weave in {sponsor}\n"
+            
+            prompt += """
 
-Include:
-- Powerful hook (first 10 seconds)
-- [B-ROLL: description] markers
-- Pattern interrupts every 30-45 sec
-- Specific examples (Poundbury, Cayalá, etc.)
-- Strong opinions
+SCRIPT REQUIREMENTS:
+- Start with a powerful hook (first 10 seconds is crucial)
+- Include [B-ROLL: description] markers throughout
+- Add pattern interrupts every 30-45 seconds
+- Use specific examples, not generic statements
+- Write in Ruben's conversational voice with flowing sentences
+- Include curiosity loops and open loops
+- End with the specified CTA or a thought-provoking conclusion
 
-Write the full script:"""
+Write the full script now:"""
 
-            with st.spinner("Writing script..."):
-                result, err = generate(prompt, 8000)
+            with st.spinner("✍️ Writing your script..."):
+                result, err = generate(prompt, 10000)
                 if result:
-                    st.markdown("### Your Script")
+                    st.markdown("### 📜 Your Script")
                     st.markdown(result)
                     save_to_history("script", result, {"idea": idea})
-                    st.download_button("📥 Download", result, "script.md")
+                    
+                    # Quality indicators
+                    word_count = len(result.split())
+                    st.divider()
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric("Word Count", word_count)
+                    with col2:
+                        st.metric("Est. Duration", f"{word_count // 150} min")
+                    with col3:
+                        st.metric("B-Roll Cues", result.count("[B-ROLL"))
+                    
+                    st.download_button("📥 Download Script", result, "script.md", use_container_width=True)
+                elif err:
+                    st.error(err)
 
 # ------------------------------------------------------------
 # SCRIPT ANALYZER
@@ -298,59 +443,62 @@ elif mode == "🔬 Script Analyzer":
     
     script = st.text_area("Paste script to analyze", height=300)
     
-    col1, col2 = st.columns(2)
-    with col1:
-        compare_to_ruben = st.checkbox("Compare to Ruben's style", value=True)
-    with col2:
-        detailed_feedback = st.checkbox("Detailed feedback", value=True)
-    
-    if st.button("🔍 Analyze", type="primary"):
-        if script and st.session_state.api_key:
-            # Load a sample transcript for comparison
-            samples = load_transcript_samples()
-            sample_text = samples[0]["content"] if samples else "No samples available"
-            
-            prompt = f"""Analyze this YouTube script for The Aesthetic City channel.
+    if st.button("🔍 Analyze Script", type="primary"):
+        if not has_api_key():
+            st.error("❌ No API key configured")
+        elif not script:
+            st.error("❌ Paste a script to analyze")
+        else:
+            prompt = f"""Analyze this YouTube script for The Aesthetic City channel (architecture/urbanism).
 
-SCRIPT TO ANALYZE:
-{script[:4000]}
+SCRIPT:
+{script[:6000]}
 
-{"RUBEN'S ACTUAL STYLE (from transcript):" + sample_text[:1500] if compare_to_ruben and samples else ""}
+Provide a detailed analysis:
 
-Provide:
+## 📊 VIRAL POTENTIAL: X/100
 
-## 📊 VIRAL SCORE: X/100
-- Hook strength (1-10)
-- Retention potential (1-10)
-- Curiosity gaps (1-10)
-- Pattern interrupts (1-10)
-- Emotional engagement (1-10)
+| Metric | Score | Notes |
+|--------|-------|-------|
+| Hook Strength | /10 | |
+| Retention Potential | /10 | |
+| Curiosity Gaps | /10 | |
+| Pattern Interrupts | /10 | |
+| Emotional Engagement | /10 | |
 
-## 🎤 VOICE MATCH: X/100
-- Conversational tone (1-10)
-- Personal stories (1-10)
-- Strong opinions (1-10)
-- Specific examples (1-10)
-- AI phrases detected (list any)
+## 🎤 VOICE AUTHENTICITY: X/100
+
+| Metric | Score | Notes |
+|--------|-------|-------|
+| Conversational Tone | /10 | |
+| Specific Examples | /10 | |
+| Strong Opinions | /10 | |
+| Personal Touch | /10 | |
+
+## 🚨 AI PHRASES DETECTED
+List any generic or AI-sounding phrases that should be rewritten.
 
 ## 🔴 WEAK SPOTS
-[List specific sentences/sections that need work]
+Specific sentences or sections that need improvement, with line references.
 
-## 🟢 STRONG SPOTS  
-[List what works well]
+## 🟢 STRONG SPOTS
+What's working well - keep these elements.
 
 ## ✏️ REWRITE SUGGESTIONS
-[Provide improved versions of weak sections]
+Provide improved versions of the weakest 3 sections.
 
-{"## 📐 COMPARISON TO RUBEN'S ACTUAL SCRIPTS" + chr(10) + "How does this compare to his real style?" if compare_to_ruben else ""}
+## 💡 MISSING ELEMENTS
+What could make this script stronger?
 
 Be specific and actionable."""
 
-            with st.spinner("Analyzing..."):
+            with st.spinner("🔍 Analyzing..."):
                 result, err = generate(prompt, 4000)
                 if result:
                     st.markdown(result)
                     save_to_history("analysis", result)
+                elif err:
+                    st.error(err)
 
 # ------------------------------------------------------------
 # A/B TEST HOOKS
@@ -370,7 +518,11 @@ elif mode == "⚔️ A/B Test Hooks":
     topic = st.text_input("Video topic (for context)")
     
     if st.button("⚔️ Compare Hooks", type="primary"):
-        if hook_a and hook_b and st.session_state.api_key:
+        if not has_api_key():
+            st.error("❌ No API key configured")
+        elif not hook_a or not hook_b:
+            st.error("❌ Enter both hooks")
+        else:
             prompt = f"""Compare these two YouTube hooks for The Aesthetic City (architecture/urbanism channel).
 
 TOPIC: {topic}
@@ -381,23 +533,41 @@ HOOK A:
 HOOK B:
 {hook_b}
 
-Analyze each hook on:
-1. Curiosity creation (1-10)
-2. Specificity (1-10)
-3. Emotional pull (1-10)
-4. Voice authenticity (1-10)
-5. CTR prediction (1-10)
+Analyze each hook:
 
-Then declare a WINNER with detailed reasoning.
+## Hook A Analysis
+| Metric | Score |
+|--------|-------|
+| Curiosity | /10 |
+| Specificity | /10 |
+| Emotional Pull | /10 |
+| Voice Authenticity | /10 |
+| CTR Prediction | /10 |
+| **TOTAL** | /50 |
 
-Finally, suggest an improved Hook C that combines the best of both."""
+## Hook B Analysis
+| Metric | Score |
+|--------|-------|
+| Curiosity | /10 |
+| Specificity | /10 |
+| Emotional Pull | /10 |
+| Voice Authenticity | /10 |
+| CTR Prediction | /10 |
+| **TOTAL** | /50 |
 
-            with st.spinner("Comparing..."):
+## 🏆 WINNER: [A or B]
+Detailed reasoning for why this hook will perform better.
+
+## 💡 HOOK C (Improved Version)
+Combine the best elements of both into an even better hook."""
+
+            with st.spinner("⚔️ Comparing..."):
                 result, err = generate(prompt, 2000)
                 if result:
-                    st.markdown("### 🏆 Comparison Results")
                     st.markdown(result)
                     save_to_history("ab_test", result)
+                elif err:
+                    st.error(err)
 
 # ------------------------------------------------------------
 # TITLES & THUMBNAILS
@@ -408,50 +578,82 @@ elif mode == "🎯 Titles & Thumbnails":
     tab1, tab2 = st.tabs(["📝 Titles", "🖼️ Thumbnails"])
     
     with tab1:
-        topic = st.text_input("Video topic")
-        if st.button("Generate 10 Titles", type="primary"):
-            if topic and st.session_state.api_key:
-                prompt = f"""Generate 10 YouTube titles for The Aesthetic City.
+        topic = st.text_input("Video topic", key="title_topic")
+        angle = st.text_input("Specific angle (optional)", placeholder="Focus on the controversy / the solution / the history...")
+        
+        if st.button("Generate 10 Titles", type="primary", key="gen_titles"):
+            if not has_api_key():
+                st.error("❌ No API key configured")
+            elif not topic:
+                st.error("❌ Enter a topic")
+            else:
+                prompt = f"""Generate 10 YouTube titles for The Aesthetic City channel.
 
 TOPIC: {topic}
+{"ANGLE: " + angle if angle else ""}
 
-Each title should:
-- Be under 60 characters
-- Create curiosity
-- Be specific (name places when possible)
+Requirements:
+- Under 60 characters each
+- Create curiosity gap
+- Be specific (use names, places, numbers when possible)
+- Match Ruben's style (not clickbaity, but compelling)
 
-Format:
-1. [Title] — CTR: X/10 — Why it works: [reason]"""
+Format as a table:
 
-                with st.spinner("Generating..."):
-                    result, _ = generate(prompt, 2000)
+| # | Title | CTR Score | Why It Works |
+|---|-------|-----------|--------------|
+| 1 | ... | X/10 | ... |
+
+Then mark your TOP 3 recommendations with reasoning."""
+
+                with st.spinner("✍️ Generating titles..."):
+                    result, err = generate(prompt, 2000)
                     if result:
                         st.markdown(result)
-                        save_to_history("titles", result)
+                        save_to_history("titles", result, {"topic": topic})
+                    elif err:
+                        st.error(err)
     
     with tab2:
         topic = st.text_input("Video topic", key="thumb_topic")
-        title = st.text_input("Video title (optional)")
-        if st.button("Generate Thumbnail Ideas", type="primary"):
-            if topic and st.session_state.api_key:
-                prompt = f"""Generate 5 thumbnail concepts for The Aesthetic City.
+        title = st.text_input("Video title (optional)", key="thumb_title")
+        
+        if st.button("Generate Thumbnail Ideas", type="primary", key="gen_thumbs"):
+            if not has_api_key():
+                st.error("❌ No API key configured")
+            elif not topic:
+                st.error("❌ Enter a topic")
+            else:
+                prompt = f"""Generate 5 thumbnail concepts for The Aesthetic City YouTube channel.
 
 TOPIC: {topic}
 {"TITLE: " + title if title else ""}
 
-For each:
-1. Visual (what's in the image)
-2. Text overlay (3-5 words)
-3. Emotion it creates
-4. Why it would get clicks
+For each thumbnail, provide:
 
-Focus on before/after, beautiful vs ugly contrasts."""
+## Thumbnail 1: [Name]
+- **Visual**: What's in the image (be specific)
+- **Text Overlay**: 3-5 words max
+- **Colors**: Color scheme
+- **Emotion**: What feeling it creates
+- **CTR Score**: X/10
+- **Why It Works**: Brief explanation
 
-                with st.spinner("Generating..."):
-                    result, _ = generate(prompt, 2000)
+Focus on:
+- Before/after contrasts
+- Beautiful vs ugly comparisons  
+- Dramatic architectural imagery
+- Human elements for relatability
+
+Mark your #1 recommendation."""
+
+                with st.spinner("🎨 Generating thumbnail ideas..."):
+                    result, err = generate(prompt, 2000)
                     if result:
                         st.markdown(result)
-                        save_to_history("thumbnails", result)
+                        save_to_history("thumbnails", result, {"topic": topic})
+                    elif err:
+                        st.error(err)
 
 # ------------------------------------------------------------
 # KNOWLEDGE BASE
@@ -459,32 +661,21 @@ Focus on before/after, beautiful vs ugly contrasts."""
 elif mode == "📚 Knowledge Base":
     st.header("📚 Knowledge Base")
     
-    tab1, tab2, tab3 = st.tabs(["Hook Formulas", "Structures", "Ruben's Transcripts"])
+    tab1, tab2 = st.tabs(["Hook Formulas", "Story Structures"])
     
     with tab1:
         for name, data in HOOK_FORMULAS.items():
             power = data["power"]
             emoji = "🔥" if power >= 9 else "⚡" if power >= 7 else "💡"
-            st.markdown(f"**{emoji} {name}** (Power: {power}/10)")
-            st.markdown(f"- Template: *{data['template']}*")
-            st.markdown(f"- Example: {data['example']}")
-            st.divider()
+            with st.expander(f"{emoji} {name} (Power: {power}/10)"):
+                st.markdown(f"**Template:** *{data['template']}*")
+                st.markdown(f"**Example:** {data['example']}")
     
     with tab2:
         for name, beats in STORY_STRUCTURES.items():
-            st.markdown(f"### {name}")
-            for i, beat in enumerate(beats, 1):
-                st.markdown(f"{i}. {beat}")
-            st.divider()
-    
-    with tab3:
-        samples = load_transcript_samples()
-        if samples:
-            for s in samples:
-                with st.expander(f"📄 {s['name']}"):
-                    st.text(s['content'][:2000])
-        else:
-            st.info("No transcripts found")
+            with st.expander(f"📐 {name}"):
+                for i, beat in enumerate(beats, 1):
+                    st.markdown(f"{i}. **{beat}**")
 
 # ------------------------------------------------------------
 # HISTORY
@@ -497,9 +688,15 @@ elif mode == "📜 History":
     else:
         for i, item in enumerate(reversed(st.session_state.history)):
             with st.expander(f"{item['type'].upper()} — {item['timestamp'][:16]}"):
-                st.markdown(item['content'][:1000] + "..." if len(item['content']) > 1000 else item['content'])
+                st.markdown(item['content'][:2000] + "..." if len(item['content']) > 2000 else item['content'])
                 if item['metadata']:
                     st.caption(f"Metadata: {item['metadata']}")
+                st.download_button(
+                    "📥 Download", 
+                    item['content'], 
+                    f"{item['type']}_{item['timestamp'][:10]}.md",
+                    key=f"dl_{i}"
+                )
         
         if st.button("🗑️ Clear History"):
             st.session_state.history = []
@@ -507,4 +704,4 @@ elif mode == "📜 History":
 
 # Footer
 st.divider()
-st.caption("v5 • Hook Generator • Script Writer • Analyzer • A/B Testing • Titles • Thumbnails • History")
+st.caption("v6 • The Aesthetic City • Hook Generator • Script Writer • Analyzer • A/B Testing • Titles & Thumbnails")
