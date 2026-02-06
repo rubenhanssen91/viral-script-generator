@@ -926,7 +926,8 @@ Be specific and practical."""
                     col1, col2, col3 = st.columns([3, 1, 1])
                     with col1:
                         st.caption(f"Source: {source['url']}")
-                        st.caption(f"Added: {source['added'][:10]}")
+                        added = source.get('created_at') or source.get('added') or ''
+                        st.caption(f"Added: {added[:10] if added else 'Unknown'}")
                     with col2:
                         if st.button("Toggle", key=f"toggle_custom_{i}"):
                             source_id = source.get('id')
