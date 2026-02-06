@@ -668,43 +668,73 @@ elif mode == "📚 Knowledge Sources":
     
     with tab2:
         st.subheader("➕ Add YouTube Video as Knowledge Source")
-        st.write("Paste a YouTube URL to extract creator advice and add it to your knowledge base")
+        st.write("Extract creator advice from YouTube videos and add to your knowledge base")
         
-        if not YOUTUBE_AVAILABLE:
-            st.warning("⚠️ YouTube transcript API not available. Install with: pip install youtube-transcript-api")
-        else:
-            youtube_url = st.text_input("YouTube URL", placeholder="https://www.youtube.com/watch?v=...")
-            source_name = st.text_input("Name this source", placeholder="e.g., 'MrBeast Retention Tips'")
-            
-            if st.button("🎬 Transcribe & Extract Advice", type="primary"):
-                if not youtube_url:
-                    st.error("❌ Enter a YouTube URL")
-                elif not source_name:
-                    st.error("❌ Name this source")
-                elif not has_api_key():
-                    st.error("❌ No API key for extraction")
-                else:
+        source_name = st.text_input("Name this source", placeholder="e.g., 'MrBeast Retention Tips'")
+        youtube_url = st.text_input("YouTube URL (optional)", placeholder="https://www.youtube.com/watch?v=...")
+        
+        st.divider()
+        
+        # Two methods: auto-transcribe or manual paste
+        method = st.radio("Transcript method:", [
+            "📝 Paste transcript manually (recommended for cloud)",
+            "🤖 Auto-transcribe (works locally, blocked on cloud)"
+        ], index=0)
+        
+        transcript = None
+        
+        if method == "📝 Paste transcript manually (recommended for cloud)":
+            st.caption("Copy transcript from YouTube (click '...' → 'Show transcript' on any video)")
+            manual_transcript = st.text_area("Paste transcript here:", height=200, 
+                placeholder="Paste the full transcript text here...")
+            if manual_transcript:
+                transcript = manual_transcript
+                st.success(f"✅ Transcript ready ({len(transcript.split())} words)")
+        
+        else:  # Auto-transcribe
+            if not YOUTUBE_AVAILABLE:
+                st.warning("⚠️ YouTube transcript API not available")
+            elif not youtube_url:
+                st.info("Enter a YouTube URL above")
+            else:
+                if st.button("🎬 Fetch Transcript", type="secondary"):
                     video_id = extract_video_id(youtube_url)
                     if not video_id:
                         st.error("❌ Invalid YouTube URL")
                     else:
                         with st.spinner("📝 Getting transcript..."):
                             transcript, err = get_youtube_transcript(video_id)
-                        
                         if err:
                             st.error(f"❌ {err}")
+                            st.info("💡 Try pasting the transcript manually instead")
                         else:
+                            st.session_state['temp_transcript'] = transcript
                             st.success(f"✅ Got transcript ({len(transcript.split())} words)")
-                            
-                            with st.spinner("🧠 Extracting actionable advice..."):
-                                extract_prompt = f"""Analyze this YouTube video transcript and extract ACTIONABLE ADVICE for creating YouTube videos about architecture/urbanism.
+                
+                # Check if we have a fetched transcript
+                if 'temp_transcript' in st.session_state:
+                    transcript = st.session_state['temp_transcript']
+        
+        st.divider()
+        
+        # Extract advice button
+        if st.button("🧠 Extract Advice from Transcript", type="primary", disabled=not transcript):
+            if not source_name:
+                st.error("❌ Name this source")
+            elif not has_api_key():
+                st.error("❌ No API key for extraction")
+            elif not transcript:
+                st.error("❌ No transcript available")
+            else:
+                with st.spinner("🧠 Extracting actionable advice..."):
+                    extract_prompt = f"""Analyze this YouTube video transcript and extract ACTIONABLE ADVICE for creating YouTube videos.
 
 TRANSCRIPT:
 {transcript[:15000]}
 
 Extract:
 1. The main principles/tips shared
-2. Specific techniques mentioned
+2. Specific techniques mentioned  
 3. Do's and Don'ts
 4. Any frameworks or formulas
 
@@ -712,29 +742,29 @@ Format as a bullet-point list of clear, actionable principles that can be applie
 Focus on VIDEO CREATION advice, not the content topic itself.
 Be specific and practical."""
 
-                                advice, err = generate(extract_prompt, 3000)
-                            
-                            if err:
-                                st.error(err)
-                            else:
-                                st.markdown("### Extracted Advice")
-                                st.markdown(advice)
-                                
-                                # Save to knowledge sources
-                                new_source = {
-                                    "name": source_name,
-                                    "url": youtube_url,
-                                    "video_id": video_id,
-                                    "transcript_words": len(transcript.split()),
-                                    "extracted_advice": advice,
-                                    "added": datetime.now().isoformat(),
-                                    "active": True
-                                }
-                                
-                                if st.button("✅ Add to Knowledge Base", type="primary"):
-                                    st.session_state.knowledge_sources.append(new_source)
-                                    st.success(f"✅ Added '{source_name}' to your knowledge base!")
-                                    st.rerun()
+                    advice, err = generate(extract_prompt, 3000)
+                
+                if err:
+                    st.error(err)
+                else:
+                    st.markdown("### 📋 Extracted Advice")
+                    st.markdown(advice)
+                    
+                    # Save button
+                    if st.button("✅ Add to Knowledge Base", type="primary", key="save_source"):
+                        new_source = {
+                            "name": source_name,
+                            "url": youtube_url or "manual paste",
+                            "transcript_words": len(transcript.split()),
+                            "extracted_advice": advice,
+                            "added": datetime.now().isoformat(),
+                            "active": True
+                        }
+                        st.session_state.knowledge_sources.append(new_source)
+                        if 'temp_transcript' in st.session_state:
+                            del st.session_state['temp_transcript']
+                        st.success(f"✅ Added '{source_name}' to your knowledge base!")
+                        st.rerun()
     
     with tab3:
         st.subheader("📹 Your Custom Sources")
