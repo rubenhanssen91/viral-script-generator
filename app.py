@@ -3,6 +3,8 @@ import anthropic
 import os
 import json
 import re
+import base64
+import requests
 from datetime import datetime
 from pathlib import Path
 
@@ -12,6 +14,72 @@ try:
     YOUTUBE_AVAILABLE = True
 except:
     YOUTUBE_AVAILABLE = False
+
+# ============================================================
+# PERSISTENT STORAGE (GitHub-based)
+# ============================================================
+
+GITHUB_REPO = "rubenhanssen91/viral-script-generator"
+STORAGE_FILE = "user_knowledge.json"
+
+def get_github_token():
+    """Get GitHub token from secrets"""
+    try:
+        if hasattr(st, 'secrets') and 'GITHUB_TOKEN' in st.secrets:
+            return st.secrets['GITHUB_TOKEN']
+    except:
+        pass
+    return os.environ.get('GITHUB_TOKEN', '')
+
+def load_persistent_sources():
+    """Load knowledge sources from GitHub"""
+    token = get_github_token()
+    if not token:
+        return None
+    
+    try:
+        url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{STORAGE_FILE}"
+        headers = {"Authorization": f"token {token}"}
+        response = requests.get(url, headers=headers)
+        
+        if response.status_code == 200:
+            content = base64.b64decode(response.json()['content']).decode('utf-8')
+            return json.loads(content)
+        elif response.status_code == 404:
+            return {"sources": [], "active_builtin": list(BUILT_IN_KNOWLEDGE.keys())}
+    except Exception as e:
+        st.warning(f"Could not load saved sources: {e}")
+    return None
+
+def save_persistent_sources(data):
+    """Save knowledge sources to GitHub"""
+    token = get_github_token()
+    if not token:
+        return False
+    
+    try:
+        url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{STORAGE_FILE}"
+        headers = {"Authorization": f"token {token}"}
+        
+        # Get current file SHA if exists
+        response = requests.get(url, headers=headers)
+        sha = response.json().get('sha') if response.status_code == 200 else None
+        
+        # Prepare content
+        content = base64.b64encode(json.dumps(data, indent=2).encode('utf-8')).decode('utf-8')
+        
+        payload = {
+            "message": f"Update knowledge sources ({datetime.now().strftime('%Y-%m-%d %H:%M')})",
+            "content": content
+        }
+        if sha:
+            payload["sha"] = sha
+        
+        response = requests.put(url, headers=headers, json=payload)
+        return response.status_code in [200, 201]
+    except Exception as e:
+        st.error(f"Could not save sources: {e}")
+    return False
 
 # ============================================================
 # CONFIG
@@ -198,11 +266,31 @@ def get_youtube_transcript(video_id):
         return None, f"Could not get transcript: {e}"
 
 def init_knowledge_state():
-    """Initialize knowledge sources in session state"""
-    if "knowledge_sources" not in st.session_state:
-        st.session_state.knowledge_sources = []
-    if "active_builtin" not in st.session_state:
-        st.session_state.active_builtin = list(BUILT_IN_KNOWLEDGE.keys())
+    """Initialize knowledge sources in session state, loading from persistent storage"""
+    if "knowledge_loaded" not in st.session_state:
+        st.session_state.knowledge_loaded = False
+    
+    if not st.session_state.knowledge_loaded:
+        # Try to load from GitHub
+        saved = load_persistent_sources()
+        if saved:
+            st.session_state.knowledge_sources = saved.get("sources", [])
+            st.session_state.active_builtin = saved.get("active_builtin", list(BUILT_IN_KNOWLEDGE.keys()))
+            st.session_state.knowledge_loaded = True
+        else:
+            if "knowledge_sources" not in st.session_state:
+                st.session_state.knowledge_sources = []
+            if "active_builtin" not in st.session_state:
+                st.session_state.active_builtin = list(BUILT_IN_KNOWLEDGE.keys())
+
+def save_knowledge_state():
+    """Save current knowledge state to persistent storage"""
+    data = {
+        "sources": st.session_state.get("knowledge_sources", []),
+        "active_builtin": st.session_state.get("active_builtin", list(BUILT_IN_KNOWLEDGE.keys())),
+        "last_saved": datetime.now().isoformat()
+    }
+    return save_persistent_sources(data)
 
 def get_active_knowledge():
     """Get all active knowledge as text for prompts"""
@@ -660,6 +748,7 @@ elif mode == "📚 Knowledge Sources":
                             st.session_state.active_builtin.remove(key)
                         else:
                             st.session_state.active_builtin.append(key)
+                        save_knowledge_state()
                         st.rerun()
                 
                 st.markdown("**Principles:**")
@@ -763,7 +852,12 @@ Be specific and practical."""
                         st.session_state.knowledge_sources.append(new_source)
                         if 'temp_transcript' in st.session_state:
                             del st.session_state['temp_transcript']
-                        st.success(f"✅ Added '{source_name}' to your knowledge base!")
+                        
+                        # Save to persistent storage
+                        if save_knowledge_state():
+                            st.success(f"✅ Added '{source_name}' and saved permanently!")
+                        else:
+                            st.warning(f"✅ Added '{source_name}' (session only - add GITHUB_TOKEN to secrets for persistence)")
                         st.rerun()
     
     with tab3:
@@ -785,10 +879,12 @@ Be specific and practical."""
                     with col2:
                         if st.button("Toggle", key=f"toggle_custom_{i}"):
                             st.session_state.knowledge_sources[i]['active'] = not is_active
+                            save_knowledge_state()
                             st.rerun()
                     with col3:
                         if st.button("🗑️ Delete", key=f"delete_{i}"):
                             st.session_state.knowledge_sources.pop(i)
+                            save_knowledge_state()
                             st.rerun()
                     
                     st.markdown("**Extracted Advice:**")
