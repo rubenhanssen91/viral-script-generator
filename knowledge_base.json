@@ -1,0 +1,50 @@
+{
+  "version": "1.0",
+  "built_in": {
+    "youtube_strategy": {
+      "name": "YouTube Strategy Fundamentals",
+      "source": "Industry best practices",
+      "principles": [
+        "Hook viewers in the first 5-10 seconds with a pattern interrupt or bold statement",
+        "Create curiosity gaps that promise revelation later in the video",
+        "Use pattern interrupts every 30-45 seconds to maintain attention",
+        "Include specific examples rather than generic advice",
+        "End with a clear call-to-action",
+        "Structure content as a journey from problem to solution",
+        "Address viewer objections directly within the content",
+        "Use open loops to keep viewers watching",
+        "Make the viewer feel something - emotion drives retention"
+      ]
+    },
+    "ruben_voice": {
+      "name": "Ruben Hanssen's Writing Voice",
+      "source": "The Aesthetic City channel analysis",
+      "principles": [
+        "Write in long, flowing sentences that connect ideas naturally - not staccato AI writing",
+        "Use verbal tics: 'quite frankly', 'by the way', 'and not only that', 'honestly'",
+        "Include parenthetical asides mid-sentence for authenticity",
+        "Stack evidence casually: 'X found this, Y found the same, our study confirmed it'",
+        "Give experts character: 'Krier is not your ordinary urban planner'",
+        "Frame as a journey: mystery to discovery to revelation",
+        "Use 'but' to connect contrasting ideas, not 'This isn't X... this is Y'",
+        "Avoid em dashes, use commas or 'but' instead",
+        "Never use: 'Let's dive in', 'Furthermore', 'In conclusion'",
+        "Avoid rhetorical one-liners and mic-drop sentences",
+        "Include disclaimers and rambling that feels human"
+      ]
+    },
+    "thumbnail_principles": {
+      "name": "Thumbnail Design Principles",
+      "source": "The Aesthetic City brand guidelines",
+      "principles": [
+        "Use high contrast between subject and background",
+        "Include human faces when possible for emotional connection",
+        "Before/after or beautiful/ugly contrasts work well",
+        "Keep text to 3-5 words maximum",
+        "Use bold, readable fonts",
+        "Create visual curiosity that complements the title"
+      ]
+    }
+  },
+  "custom_sources": []
+}
