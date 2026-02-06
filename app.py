@@ -16,70 +16,111 @@ except:
     YOUTUBE_AVAILABLE = False
 
 # ============================================================
-# PERSISTENT STORAGE (GitHub-based)
+# PERSISTENT STORAGE (Supabase)
 # ============================================================
 
-GITHUB_REPO = "rubenhanssen91/viral-script-generator"
-STORAGE_FILE = "user_knowledge.json"
-
-def get_github_token():
-    """Get GitHub token from secrets"""
+def get_supabase_config():
+    """Get Supabase config from secrets"""
     try:
-        if hasattr(st, 'secrets') and 'GITHUB_TOKEN' in st.secrets:
-            return st.secrets['GITHUB_TOKEN']
+        if hasattr(st, 'secrets'):
+            return {
+                "url": st.secrets.get('SUPABASE_URL', ''),
+                "key": st.secrets.get('SUPABASE_KEY', '')
+            }
     except:
         pass
-    return os.environ.get('GITHUB_TOKEN', '')
+    return {
+        "url": os.environ.get('SUPABASE_URL', ''),
+        "key": os.environ.get('SUPABASE_KEY', '')
+    }
 
 def load_persistent_sources():
-    """Load knowledge sources from GitHub"""
-    token = get_github_token()
-    if not token:
+    """Load knowledge sources from Supabase"""
+    config = get_supabase_config()
+    if not config['url'] or not config['key']:
         return None
     
     try:
-        url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{STORAGE_FILE}"
-        headers = {"Authorization": f"token {token}"}
+        url = f"{config['url']}/rest/v1/knowledge_sources?select=*&order=created_at.desc"
+        headers = {
+            "apikey": config['key'],
+            "Authorization": f"Bearer {config['key']}"
+        }
         response = requests.get(url, headers=headers)
         
         if response.status_code == 200:
-            content = base64.b64decode(response.json()['content']).decode('utf-8')
-            return json.loads(content)
-        elif response.status_code == 404:
-            return {"sources": [], "active_builtin": list(BUILT_IN_KNOWLEDGE.keys())}
+            sources = response.json()
+            return {"sources": sources, "active_builtin": list(BUILT_IN_KNOWLEDGE.keys())}
     except Exception as e:
-        st.warning(f"Could not load saved sources: {e}")
+        st.warning(f"Could not load sources: {e}")
     return None
 
-def save_persistent_sources(data):
-    """Save knowledge sources to GitHub"""
-    token = get_github_token()
-    if not token:
+def save_source_to_db(source):
+    """Save a single knowledge source to Supabase"""
+    config = get_supabase_config()
+    if not config['url'] or not config['key']:
         return False
     
     try:
-        url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{STORAGE_FILE}"
-        headers = {"Authorization": f"token {token}"}
-        
-        # Get current file SHA if exists
-        response = requests.get(url, headers=headers)
-        sha = response.json().get('sha') if response.status_code == 200 else None
-        
-        # Prepare content
-        content = base64.b64encode(json.dumps(data, indent=2).encode('utf-8')).decode('utf-8')
-        
-        payload = {
-            "message": f"Update knowledge sources ({datetime.now().strftime('%Y-%m-%d %H:%M')})",
-            "content": content
+        url = f"{config['url']}/rest/v1/knowledge_sources"
+        headers = {
+            "apikey": config['key'],
+            "Authorization": f"Bearer {config['key']}",
+            "Content-Type": "application/json",
+            "Prefer": "return=minimal"
         }
-        if sha:
-            payload["sha"] = sha
-        
-        response = requests.put(url, headers=headers, json=payload)
+        payload = {
+            "name": source.get('name'),
+            "url": source.get('url'),
+            "extracted_advice": source.get('extracted_advice'),
+            "active": source.get('active', True),
+            "transcript_words": source.get('transcript_words')
+        }
+        response = requests.post(url, headers=headers, json=payload)
         return response.status_code in [200, 201]
     except Exception as e:
-        st.error(f"Could not save sources: {e}")
+        st.error(f"Could not save source: {e}")
     return False
+
+def update_source_in_db(source_id, updates):
+    """Update a source in Supabase"""
+    config = get_supabase_config()
+    if not config['url'] or not config['key']:
+        return False
+    
+    try:
+        url = f"{config['url']}/rest/v1/knowledge_sources?id=eq.{source_id}"
+        headers = {
+            "apikey": config['key'],
+            "Authorization": f"Bearer {config['key']}",
+            "Content-Type": "application/json",
+            "Prefer": "return=minimal"
+        }
+        response = requests.patch(url, headers=headers, json=updates)
+        return response.status_code in [200, 204]
+    except:
+        return False
+
+def delete_source_from_db(source_id):
+    """Delete a source from Supabase"""
+    config = get_supabase_config()
+    if not config['url'] or not config['key']:
+        return False
+    
+    try:
+        url = f"{config['url']}/rest/v1/knowledge_sources?id=eq.{source_id}"
+        headers = {
+            "apikey": config['key'],
+            "Authorization": f"Bearer {config['key']}"
+        }
+        response = requests.delete(url, headers=headers)
+        return response.status_code in [200, 204]
+    except:
+        return False
+
+def save_persistent_sources(data):
+    """Compatibility wrapper - not used with Supabase"""
+    return True
 
 # ============================================================
 # CONFIG
@@ -266,12 +307,11 @@ def get_youtube_transcript(video_id):
         return None, f"Could not get transcript: {e}"
 
 def init_knowledge_state():
-    """Initialize knowledge sources in session state, loading from persistent storage"""
+    """Initialize knowledge sources in session state, loading from Supabase"""
     if "knowledge_loaded" not in st.session_state:
         st.session_state.knowledge_loaded = False
     
     if not st.session_state.knowledge_loaded:
-        # Try to load from GitHub
         saved = load_persistent_sources()
         if saved:
             st.session_state.knowledge_sources = saved.get("sources", [])
@@ -284,13 +324,13 @@ def init_knowledge_state():
                 st.session_state.active_builtin = list(BUILT_IN_KNOWLEDGE.keys())
 
 def save_knowledge_state():
-    """Save current knowledge state to persistent storage"""
-    data = {
-        "sources": st.session_state.get("knowledge_sources", []),
-        "active_builtin": st.session_state.get("active_builtin", list(BUILT_IN_KNOWLEDGE.keys())),
-        "last_saved": datetime.now().isoformat()
-    }
-    return save_persistent_sources(data)
+    """Compatibility function - individual saves happen directly"""
+    return True
+
+def reload_sources():
+    """Force reload sources from database"""
+    st.session_state.knowledge_loaded = False
+    init_knowledge_state()
 
 def get_active_knowledge():
     """Get all active knowledge as text for prompts"""
@@ -846,18 +886,19 @@ Be specific and practical."""
                             "url": youtube_url or "manual paste",
                             "transcript_words": len(transcript.split()),
                             "extracted_advice": advice,
-                            "added": datetime.now().isoformat(),
                             "active": True
                         }
-                        st.session_state.knowledge_sources.append(new_source)
+                        
                         if 'temp_transcript' in st.session_state:
                             del st.session_state['temp_transcript']
                         
-                        # Save to persistent storage
-                        if save_knowledge_state():
-                            st.success(f"✅ Added '{source_name}' and saved permanently!")
+                        # Save to Supabase
+                        if save_source_to_db(new_source):
+                            st.success(f"✅ Added '{source_name}' to database!")
+                            st.session_state.knowledge_loaded = False  # Force reload
                         else:
-                            st.warning(f"✅ Added '{source_name}' (session only - add GITHUB_TOKEN to secrets for persistence)")
+                            st.warning(f"⚠️ Added to session only - check Supabase config")
+                            st.session_state.knowledge_sources.append(new_source)
                         st.rerun()
     
     with tab3:
@@ -878,13 +919,20 @@ Be specific and practical."""
                         st.caption(f"Added: {source['added'][:10]}")
                     with col2:
                         if st.button("Toggle", key=f"toggle_custom_{i}"):
-                            st.session_state.knowledge_sources[i]['active'] = not is_active
-                            save_knowledge_state()
+                            source_id = source.get('id')
+                            new_active = not is_active
+                            if source_id and update_source_in_db(source_id, {"active": new_active}):
+                                st.session_state.knowledge_loaded = False
+                            else:
+                                st.session_state.knowledge_sources[i]['active'] = new_active
                             st.rerun()
                     with col3:
                         if st.button("🗑️ Delete", key=f"delete_{i}"):
-                            st.session_state.knowledge_sources.pop(i)
-                            save_knowledge_state()
+                            source_id = source.get('id')
+                            if source_id and delete_source_from_db(source_id):
+                                st.session_state.knowledge_loaded = False
+                            else:
+                                st.session_state.knowledge_sources.pop(i)
                             st.rerun()
                     
                     st.markdown("**Extracted Advice:**")
