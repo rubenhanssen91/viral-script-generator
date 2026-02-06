@@ -876,30 +876,40 @@ Be specific and practical."""
                 if err:
                     st.error(err)
                 else:
-                    st.markdown("### 📋 Extracted Advice")
-                    st.markdown(advice)
+                    # Store in session state for the save button
+                    st.session_state['pending_source'] = {
+                        "name": source_name,
+                        "url": youtube_url or "manual paste",
+                        "transcript_words": len(transcript.split()),
+                        "extracted_advice": advice,
+                        "active": True
+                    }
+                    st.rerun()
+        
+        # Show extracted advice and save button if pending
+        if 'pending_source' in st.session_state:
+            st.markdown("### 📋 Extracted Advice")
+            st.markdown(st.session_state['pending_source']['extracted_advice'])
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("✅ Add to Knowledge Base", type="primary", use_container_width=True):
+                    source = st.session_state['pending_source']
                     
-                    # Save button
-                    if st.button("✅ Add to Knowledge Base", type="primary", key="save_source"):
-                        new_source = {
-                            "name": source_name,
-                            "url": youtube_url or "manual paste",
-                            "transcript_words": len(transcript.split()),
-                            "extracted_advice": advice,
-                            "active": True
-                        }
-                        
+                    # Save to Supabase
+                    if save_source_to_db(source):
+                        st.success(f"✅ Added '{source['name']}' to database!")
+                        del st.session_state['pending_source']
                         if 'temp_transcript' in st.session_state:
                             del st.session_state['temp_transcript']
-                        
-                        # Save to Supabase
-                        if save_source_to_db(new_source):
-                            st.success(f"✅ Added '{source_name}' to database!")
-                            st.session_state.knowledge_loaded = False  # Force reload
-                        else:
-                            st.warning(f"⚠️ Added to session only - check Supabase config")
-                            st.session_state.knowledge_sources.append(new_source)
+                        st.session_state.knowledge_loaded = False
                         st.rerun()
+                    else:
+                        st.error("❌ Failed to save - check Supabase config in secrets")
+            with col2:
+                if st.button("❌ Discard", use_container_width=True):
+                    del st.session_state['pending_source']
+                    st.rerun()
     
     with tab3:
         st.subheader("📹 Your Custom Sources")
